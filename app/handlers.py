@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 
 from time import sleep
 import json
-from random import shuffle
+import time
 
 from quiz import questions, profiles
 from app.keyboard import main_keyboard, profiles_inline_kb, set_keyboard
@@ -17,8 +17,14 @@ router = Router()
 class QuizStates(StatesGroup):
     waiting_for_answer = State()
 
-with open(r"C:\Users\Vovai\PycharmProjects\Quiz-Bot\data.json") as file:
+with open(r"C:\Users\IT Academy\PycharmProjects\Quiz-Bot\data.json", 'r', encoding='utf-8') as file:
     data = json.load(file)
+
+last_questions = {}
+
+def save_data():
+    with open(r"C:\Users\IT Academy\PycharmProjects\Quiz-Bot\data.json", 'w', encoding='utf-8') as input_file:
+        json.dump(data, input_file, ensure_ascii=False, indent=2)
 
 
 @router.message(CommandStart())
@@ -30,6 +36,7 @@ async def start_message(message: Message):
             'correct_answers': 0
         }
         data[message.from_user.first_name]['questions'] = questions[data[message.from_user.first_name]['profile']]
+        save_data()
     await message.answer('Привет! Выбирай интересующую тебя тему и решай квиз!', reply_markup=main_keyboard)
 
 
@@ -54,38 +61,41 @@ async def start_quiz(message: Message, state: FSMContext):
     data[message.from_user.first_name]['number_question'] = 0
     data[message.from_user.first_name]['score'] = 0
     data[message.from_user.first_name]['alert'] = ''
+    data[message.from_user.first_name]['start_time'] = time.time()
+    last_questions[message.from_user.first_name] = {'last_question': None}
     if data[message.from_user.first_name]['profile'] == '(не указано)':
         await message.answer('Пожалуйста, укажите направление квиза')
     else:
         await state.set_state(QuizStates.waiting_for_answer)
-        data[message.from_user.first_name]['last_question'] = await message.answer(f'{data[message.from_user.first_name]['number_question']+1} вопрос!\n\n{data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['question']}', reply_markup=set_keyboard(shuffled=True, btns=data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['options']))
-
+        last_questions[message.from_user.first_name]['last_question'] = await message.answer(f'{data[message.from_user.first_name]['number_question']+1} вопрос!\n\n{data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['question']}', reply_markup=set_keyboard(shuffled=True, btns=data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['options']))
+    save_data()
 
 async def process_quiz(message: Message, state: FSMContext):
     if data[message.from_user.first_name]['number_question'] == 10:
         sleep(0.5)
-        await data[message.from_user.first_name]['last_question'].delete()
+        await last_questions[message.from_user.first_name]['last_question'].delete()
         await message.delete()
         sleep(0.5)
         await message.answer(f'Вопрос {data[message.from_user.first_name]['number_question']}: ' + data[message.from_user.first_name]['alert'], parse_mode='markdown')
         sleep(0.5)
-        await message.answer(f'Поздравляю! Вы завершили квиз!\n\nВаш результат: {data[message.from_user.first_name]['score']}/10', reply_markup=main_keyboard)
+        await message.answer(f'Поздравляю! Вы завершили квиз!\n\nВаш результат: {data[message.from_user.first_name]['score']}/10\nВы прошли квиз за {round(time.time() - data[message.from_user.first_name]['start_time'], 2)} сек.', reply_markup=main_keyboard)
         data[message.from_user.first_name]['number_question'] = 0
         data[message.from_user.first_name]['score'] = 0
         data[message.from_user.first_name]['solved_quizs'] += 1
         del data[message.from_user.first_name]['score']
         del data[message.from_user.first_name]['number_question']
-        del data[message.from_user.first_name]['last_question']
+        del last_questions[message.from_user.first_name]['last_question']
+        del data[message.from_user.first_name]['start_time']
         await state.clear()
     else:
         sleep(0.5)
-        await data[message.from_user.first_name]['last_question'].delete()
+        await last_questions[message.from_user.first_name]['last_question'].delete()
         await message.delete()
         sleep(0.5)
         await message.answer(f'Вопрос {data[message.from_user.first_name]['number_question']}: ' + data[message.from_user.first_name]['alert'], parse_mode='markdown')
         sleep(0.5)
-        data[message.from_user.first_name]['last_question'] = await message.answer(f'{data[message.from_user.first_name]['number_question']+1} вопрос!\n\n{data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['question']}', reply_markup=set_keyboard(shuffled=True, btns=data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['options']))
-
+        last_questions[message.from_user.first_name]['last_question'] = await message.answer(f'{data[message.from_user.first_name]['number_question']+1} вопрос!\n\n{data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['question']}', reply_markup=set_keyboard(shuffled=True, btns=data[message.from_user.first_name]['questions'][data[message.from_user.first_name]['number_question']]['options']))
+    save_data()
 
 @router.message(QuizStates.waiting_for_answer)
 async def check_answer(message: Message, state: FSMContext):
@@ -97,7 +107,7 @@ async def check_answer(message: Message, state: FSMContext):
     data[message.from_user.first_name]['alert'] = alert
     data[message.from_user.first_name]['number_question'] += 1
     await process_quiz(message, state)
-
+    save_data()
 
 @router.callback_query()
 async def change_profile(callback: CallbackQuery):
